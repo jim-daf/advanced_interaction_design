@@ -16,7 +16,7 @@ const App = (() => {
         currentView: 'recipes',
         currentRecipe: null,
         currentIngredients: [],
-        ollamaUrl: 'https://p8cd6s6p-11434.euw.devtunnels.ms/',
+        ollamaUrl: 'http://localhost:11434',
         model: 'qwen3:4b',
         ollamaConnected: false,
         nudgeIntensity: 3,
@@ -957,4 +957,5 @@ Keep responses concise (aim for 100-200 words), warm, and helpful. Use emojis sp
 
 // Initialize on load
 document.addEventListener('DOMContentLoaded', App.init);
+
 
