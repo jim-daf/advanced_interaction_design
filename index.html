@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Eco-Nudge Negotiator — Sustainable Meal Planning Assistant</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- ===== Top Navigation ===== -->
+    <nav class="top-nav">
+        <div class="nav-brand">
+            <span class="brand-icon">🌿</span>
+            <span class="brand-name">Eco-Nudge</span>
+        </div>
+        <div class="nav-links">
+            <a href="#" class="nav-link active" data-view="recipes">Meal Planner</a>
+            <a href="#" class="nav-link" data-view="chat">AI Assistant</a>
+            <a href="#" class="nav-link" data-view="impact">My Impact</a>
+            <a href="#" class="nav-link" data-view="settings">Settings</a>
+        </div>
+        <div class="nav-status">
+            <span class="streak-badge" id="streakBadge" title="Eco choices streak">🔥 0</span>
+        </div>
+    </nav>
+
+    <!-- ===== Main Content Area ===== -->
+    <main class="main-content">
+
+        <!-- ===== RECIPES VIEW ===== -->
+        <section id="view-recipes" class="view active">
+            <div class="view-header">
+                <h1>Meal Planner</h1>
+                <p class="subtitle">Browse recipes or add your own. We'll help you make eco-friendly choices.</p>
+            </div>
+
+            <!-- Recipe Grid -->
+            <div class="recipe-grid" id="recipeGrid">
+                <!-- Populated by JS -->
+            </div>
+
+            <!-- Custom Recipe Input -->
+            <div class="custom-recipe-card">
+                <h3>📝 Add Your Own Recipe</h3>
+                <div class="form-group">
+                    <label for="customRecipeName">Recipe Name</label>
+                    <input type="text" id="customRecipeName" placeholder="e.g., Spaghetti Carbonara">
+                </div>
+                <div class="form-group">
+                    <label for="customIngredients">Ingredients (one per line: amount unit ingredient)</label>
+                    <textarea id="customIngredients" rows="6" placeholder="500g beef&#10;400g tomatoes&#10;200g pasta&#10;50g cheese"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="customServings">Servings</label>
+                    <input type="number" id="customServings" value="4" min="1" max="20">
+                </div>
+                <button class="btn btn-primary" id="analyzeCustomBtn">
+                    🔍 Analyze Recipe
+                </button>
+            </div>
+        </section>
+
+        <!-- ===== RECIPE DETAIL / NEGOTIATION VIEW ===== -->
+        <section id="view-detail" class="view">
+            <button class="btn btn-back" id="backToRecipes">← Back to Recipes</button>
+            
+            <div class="detail-layout">
+                <!-- Left: Recipe Info -->
+                <div class="detail-recipe">
+                    <h2 id="detailRecipeName"></h2>
+                    <div class="recipe-meta" id="detailMeta"></div>
+                    
+                    <!-- Carbon Score Card -->
+                    <div class="carbon-score-card" id="carbonScoreCard">
+                        <div class="score-header">
+                            <span class="score-label">Carbon Footprint</span>
+                            <span class="score-grade" id="carbonGrade">C</span>
+                        </div>
+                        <div class="score-bar-container">
+                            <div class="score-bar" id="carbonBar"></div>
+                        </div>
+                        <div class="score-details">
+                            <span id="carbonTotal">0.00 kg CO₂e</span>
+                            <span id="carbonPerServing">0.00 kg CO₂e/serving</span>
+                        </div>
+                    </div>
+
+                    <!-- Ingredient List -->
+                    <div class="ingredient-list" id="ingredientList">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+
+                <!-- Right: Negotiation Panel -->
+                <div class="negotiation-panel">
+                    <div class="panel-header">
+                        <h3>🌿 Eco Suggestions</h3>
+                        <p class="panel-subtitle">I found some ways to make this recipe greener!</p>
+                    </div>
+                    <div class="suggestions-container" id="suggestionsContainer">
+                        <!-- Populated by JS -->
+                    </div>
+                    <div class="panel-actions">
+                        <button class="btn btn-success" id="applyAllBtn" style="display:none;">
+                            ✅ Apply All Suggestions
+                        </button>
+                        <button class="btn btn-outline" id="dismissAllBtn" style="display:none;">
+                            No thanks, keep original
+                        </button>
+                    </div>
+                    
+                    <!-- AI Chat for this recipe -->
+                    <div class="recipe-chat">
+                        <div class="chat-messages" id="recipeChatMessages">
+                            <!-- Populated by JS -->
+                        </div>
+                        <div class="chat-input-area">
+                            <input type="text" id="recipeChatInput" placeholder="Ask about this recipe...">
+                            <button class="btn btn-send" id="recipeChatSend">➤</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== CHAT VIEW ===== -->
+        <section id="view-chat" class="view">
+            <div class="chat-container">
+                <div class="chat-header">
+                    <div class="assistant-avatar">🌿</div>
+                    <div>
+                        <h2>Eco-Nudge Assistant</h2>
+                        <p class="assistant-status">Ready to help with sustainable meal planning</p>
+                    </div>
+                </div>
+                <div class="chat-messages-main" id="mainChatMessages">
+                    <div class="chat-message assistant">
+                        <div class="message-avatar">🌿</div>
+                        <div class="message-content">
+                            <p>Hi there! I'm your Eco-Nudge assistant, powered by a local AI running on your machine via Ollama. I can help you with:</p>
+                            <ul>
+                                <li>🥗 Finding sustainable recipe alternatives</li>
+                                <li>🔄 Swapping high-carbon ingredients for eco-friendly ones</li>
+                                <li>📊 Understanding the environmental impact of your meals</li>
+                                <li>💡 Tips for reducing your food carbon footprint</li>
+                                <li>🍳 Cooking techniques, meal planning, and nutrition advice</li>
+                                <li>🌍 Anything about food sustainability &mdash; just ask!</li>
+                            </ul>
+                            <p>What would you like to know?</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="quick-prompts" id="quickPrompts">
+                    <button class="quick-prompt-btn" data-prompt="Suggest a low-carbon dinner for 4 people">🍽️ Low-carbon dinner</button>
+                    <button class="quick-prompt-btn" data-prompt="What are the best protein alternatives to beef?">🥩→🌱 Beef alternatives</button>
+                    <button class="quick-prompt-btn" data-prompt="Help me make my favorite pasta dish more sustainable">🍝 Greener pasta</button>
+                    <button class="quick-prompt-btn" data-prompt="What's the carbon footprint of cheese?">🧀 Cheese impact</button>
+                </div>
+                <div class="chat-input-area main-chat-input">
+                    <input type="text" id="mainChatInput" placeholder="Ask me anything about sustainable eating...">
+                    <button class="btn btn-send" id="mainChatSend">➤</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== IMPACT VIEW ===== -->
+        <section id="view-impact" class="view">
+            <div class="view-header">
+                <h1>Your Eco Impact</h1>
+                <p class="subtitle">Track your sustainable choices and see the difference you're making.</p>
+            </div>
+
+            <div class="impact-stats-grid">
+                <div class="impact-card highlight">
+                    <div class="impact-icon">🌍</div>
+                    <div class="impact-value" id="totalCO2Saved">0.00</div>
+                    <div class="impact-label">kg CO₂ saved</div>
+                    <div class="impact-equiv" id="co2Equiv"></div>
+                </div>
+                <div class="impact-card">
+                    <div class="impact-icon">🥗</div>
+                    <div class="impact-value" id="mealsOptimized">0</div>
+                    <div class="impact-label">Meals optimized</div>
+                </div>
+                <div class="impact-card">
+                    <div class="impact-icon">🔄</div>
+                    <div class="impact-value" id="swapsMade">0</div>
+                    <div class="impact-label">Ingredient swaps</div>
+                </div>
+                <div class="impact-card">
+                    <div class="impact-icon">🔥</div>
+                    <div class="impact-value" id="currentStreak">0</div>
+                    <div class="impact-label">Day streak</div>
+                </div>
+            </div>
+
+            <!-- Impact History -->
+            <div class="impact-history">
+                <h3>Recent Activity</h3>
+                <div class="history-list" id="historyList">
+                    <div class="history-empty">
+                        <p>No eco-choices recorded yet. Start by analyzing a recipe!</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Weekly Chart -->
+            <div class="impact-chart-card">
+                <h3>Weekly Carbon Savings</h3>
+                <div class="chart-container" id="weeklyChart">
+                    <div class="chart-bars">
+                        <div class="chart-bar-wrapper" data-day="Mon">
+                            <div class="chart-bar" style="height: 0%"></div>
+                            <span class="chart-label">Mon</span>
+                        </div>
+                        <div class="chart-bar-wrapper" data-day="Tue">
+                            <div class="chart-bar" style="height: 0%"></div>
+                            <span class="chart-label">Tue</span>
+                        </div>
+                        <div class="chart-bar-wrapper" data-day="Wed">
+                            <div class="chart-bar" style="height: 0%"></div>
+                            <span class="chart-label">Wed</span>
+                        </div>
+                        <div class="chart-bar-wrapper" data-day="Thu">
+                            <div class="chart-bar" style="height: 0%"></div>
+                            <span class="chart-label">Thu</span>
+                        </div>
+                        <div class="chart-bar-wrapper" data-day="Fri">
+                            <div class="chart-bar" style="height: 0%"></div>
+                            <span class="chart-label">Fri</span>
+                        </div>
+                        <div class="chart-bar-wrapper" data-day="Sat">
+                            <div class="chart-bar" style="height: 0%"></div>
+                            <span class="chart-label">Sat</span>
+                        </div>
+                        <div class="chart-bar-wrapper" data-day="Sun">
+                            <div class="chart-bar" style="height: 0%"></div>
+                            <span class="chart-label">Sun</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== SETTINGS VIEW ===== -->
+        <section id="view-settings" class="view">
+            <div class="view-header">
+                <h1>Settings</h1>
+                <p class="subtitle">Configure your Eco-Nudge experience.</p>
+            </div>
+
+            <div class="settings-card">
+                <h3>🤖 AI Configuration (Ollama)</h3>
+                <div class="form-group">
+                    <label for="ollamaUrlInput">Ollama Server URL</label>
+                    <input type="text" id="ollamaUrlInput" placeholder="http://localhost:11434" value="http://localhost:11434">
+                    <small>The URL where your local Ollama instance is running.</small>
+                </div>
+                <div class="form-group">
+                    <label for="modelSelect">Model</label>
+                    <select id="modelSelect">
+                        <option value="qwen3:4b">Qwen3 4B (Default)</option>
+                        <option value="llama3.2">Llama 3.2</option>
+                        <option value="mistral">Mistral</option>
+                        <option value="gemma3">Gemma 3</option>
+                        <option value="phi4-mini">Phi-4 Mini</option>
+                    </select>
+                    <small>Select a model you have installed. Run <code>ollama list</code> to see your models.</small>
+                </div>
+                <div class="form-group">
+                    <label for="customModelInput">Or enter a custom model name</label>
+                    <input type="text" id="customModelInput" placeholder="e.g., deepseek-r1:8b">
+                    <small>Leave empty to use the dropdown selection above.</small>
+                </div>
+                <button class="btn btn-primary" id="saveApiKey">Save AI Settings</button>
+                <button class="btn btn-outline" id="testOllamaBtn" style="margin-left:0.5rem;">🔌 Test Connection</button>
+            </div>
+
+            <div class="settings-card">
+                <h3>🎯 Nudge Preferences</h3>
+                <div class="form-group">
+                    <label for="nudgeIntensity">Suggestion Intensity</label>
+                    <input type="range" id="nudgeIntensity" min="1" max="5" value="3">
+                    <div class="range-labels">
+                        <span>Gentle</span>
+                        <span>Balanced</span>
+                        <span>Persistent</span>
+                    </div>
+                    <small>Controls how actively the AI suggests alternatives.</small>
+                </div>
+                <div class="form-group">
+                    <label>Focus Areas</label>
+                    <div class="checkbox-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="focusCarbon" checked> 🌍 Carbon footprint reduction
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="focusHealth" checked> ❤️ Health improvements
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="focusCost"> 💰 Cost optimization
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="settings-card">
+                <h3>🍽️ Dietary Preferences</h3>
+                <div class="form-group">
+                    <label>Dietary Restrictions</label>
+                    <div class="checkbox-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="dietVegetarian"> 🥬 Vegetarian
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="dietVegan"> 🌱 Vegan
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="dietGlutenFree"> 🌾 Gluten-free
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="dietDairyFree"> 🥛 Dairy-free
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="dietNutFree"> 🥜 Nut-free
+                        </label>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="allergies">Allergies / Dislikes</label>
+                    <input type="text" id="allergies" placeholder="e.g., shellfish, cilantro">
+                    <small>Ingredients the AI should never suggest.</small>
+                </div>
+                <button class="btn btn-primary" id="saveDietPrefs">Save Preferences</button>
+            </div>
+
+            <div class="settings-card">
+                <h3>🔒 Privacy</h3>
+                <p>All data is stored locally in your browser. The AI runs entirely on your machine via Ollama — no data is sent to external servers. Your conversations stay private.</p>
+                <button class="btn btn-danger" id="clearDataBtn">Clear All Data</button>
+            </div>
+
+            <!-- Ollama Status Info -->
+            <div class="settings-card" id="fallbackModeCard">
+                <h3>ℹ️ Ollama Setup</h3>
+                <p>This app uses <strong>Ollama</strong> for a fully local AI assistant. To get started:</p>
+                <ol style="margin:0.5rem 0 0.5rem 1.2rem; line-height:1.8;">
+                    <li>Install Ollama from <a href="https://ollama.com" target="_blank">ollama.com</a></li>
+                    <li>Run <code>ollama pull qwen3:4b</code> in your terminal</li>
+                    <li>Make sure Ollama is running (it starts automatically after install)</li>
+                    <li>Click "Test Connection" above to verify</li>
+                </ol>
+                <p style="margin-top:0.5rem;">If Ollama is not running, the assistant will use built-in fallback responses.</p>
+            </div>
+        </section>
+    </main>
+
+    <!-- ===== Notification Toast ===== -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- ===== Modal Overlay ===== -->
+    <div class="modal-overlay" id="modalOverlay">
+        <div class="modal-content" id="modalContent">
+            <!-- Dynamic content -->
+        </div>
+    </div>
+
+    <script src="eco-data.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
