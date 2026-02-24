@@ -16,7 +16,7 @@ const App = (() => {
         currentView: 'recipes',
         currentRecipe: null,
         currentIngredients: [],
-        ollamaUrl: 'http://localhost:11434',
+        ollamaUrl: 'https://p8cd6s6p-11434.euw.devtunnels.ms/',
         model: 'qwen3:4b',
         ollamaConnected: false,
         nudgeIntensity: 3,
@@ -842,7 +842,7 @@ Keep responses concise (aim for 100-200 words), warm, and helpful. Use emojis sp
     }
 
     function saveApiSettings() {
-        state.ollamaUrl = document.getElementById('ollamaUrlInput').value.trim() || 'http://localhost:11434';
+        state.ollamaUrl = document.getElementById('ollamaUrlInput').value.trim() || 'https://p8cd6s6p-11434.euw.devtunnels.ms/';
         localStorage.setItem('econudge_ollama_url', state.ollamaUrl);
 
         const customModel = document.getElementById('customModelInput').value.trim();
@@ -957,3 +957,4 @@ Keep responses concise (aim for 100-200 words), warm, and helpful. Use emojis sp
 
 // Initialize on load
 document.addEventListener('DOMContentLoaded', App.init);
+
