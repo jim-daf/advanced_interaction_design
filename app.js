@@ -772,8 +772,9 @@ Keep responses concise, warm, and helpful. Use emojis sparingly but appropriatel
                     stream: false,
                     options: {
                         temperature: 0.7,
-                        num_predict: 800,
+                        num_predict: 300,
                     },
+                    keep_alive: '10m',
                 }),
             });
 
@@ -789,6 +790,77 @@ Keep responses concise, warm, and helpful. Use emojis sparingly but appropriatel
             console.error('Ollama call failed:', error);
             state.ollamaConnected = false;
             return generateFallbackResponse(messages);
+        }
+    }
+
+    /**
+     * Streaming LLM call — yields tokens as they arrive so the UI
+     * can display them progressively for a perceived 1-2 s response time.
+     * Falls back to a single non-streamed result when Ollama is unavailable.
+     */
+    async function callLLMStream(messages, onToken) {
+        if (!state.ollamaConnected) {
+            await checkOllamaConnection();
+        }
+
+        if (!state.ollamaConnected) {
+            const fallback = generateFallbackResponse(messages);
+            onToken(fallback, true);
+            return fallback;
+        }
+
+        try {
+            const response = await fetch(`${state.ollamaUrl}/api/chat`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    model: state.model,
+                    messages: [
+                        { role: 'system', content: SYSTEM_PROMPT },
+                        ...messages,
+                    ],
+                    stream: true,
+                    options: {
+                        temperature: 0.7,
+                        num_predict: 300,
+                    },
+                    keep_alive: '10m',
+                }),
+            });
+
+            if (!response.ok) {
+                const errText = await response.text();
+                console.error('Ollama API error:', errText);
+                const fallback = generateFallbackResponse(messages);
+                onToken(fallback, true);
+                return fallback;
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let full = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                const chunk = decoder.decode(value, { stream: true });
+                // Each line is a JSON object
+                for (const line of chunk.split('\n').filter(l => l.trim())) {
+                    try {
+                        const json = JSON.parse(line);
+                        const token = json.message?.content || '';
+                        full += token;
+                        onToken(full, json.done === true);
+                    } catch (_) { /* skip malformed */ }
+                }
+            }
+            return full || generateFallbackResponse(messages);
+        } catch (error) {
+            console.error('Ollama stream failed:', error);
+            state.ollamaConnected = false;
+            const fallback = generateFallbackResponse(messages);
+            onToken(fallback, true);
+            return fallback;
         }
     }
 
@@ -843,16 +915,15 @@ Keep responses concise, warm, and helpful. Use emojis sparingly but appropriatel
         state.chatHistory.push({ role: 'user', content: message });
         appendChatMessage('mainChatMessages', 'user', message);
 
-        // Show loading
-        const loadingId = appendChatLoading('mainChatMessages');
+        // Create a placeholder message for streaming
+        const streamEl = appendStreamingMessage('mainChatMessages');
 
-        // Get LLM response
-        const response = await callLLM(state.chatHistory);
+        // Stream LLM response
+        const response = await callLLMStream(state.chatHistory, (text, done) => {
+            updateStreamingMessage(streamEl, text, done);
+        });
 
-        // Remove loading and add response
-        removeChatLoading(loadingId);
         state.chatHistory.push({ role: 'assistant', content: response });
-        appendChatMessage('mainChatMessages', 'assistant', response);
     }
 
     async function sendRecipeChat() {
@@ -869,12 +940,15 @@ Keep responses concise, warm, and helpful. Use emojis sparingly but appropriatel
         state.recipeChatHistory.push({ role: 'user', content: `${recipeContext}\n\nUser question: ${message}` });
         appendChatMessage('recipeChatMessages', 'user', message);
 
-        const loadingId = appendChatLoading('recipeChatMessages');
-        const response = await callLLM(state.recipeChatHistory);
-        removeChatLoading(loadingId);
+        // Create a placeholder message for streaming
+        const streamEl = appendStreamingMessage('recipeChatMessages');
+
+        // Stream LLM response
+        const response = await callLLMStream(state.recipeChatHistory, (text, done) => {
+            updateStreamingMessage(streamEl, text, done);
+        });
 
         state.recipeChatHistory.push({ role: 'assistant', content: response });
-        appendChatMessage('recipeChatMessages', 'assistant', response);
     }
 
     function appendChatMessage(containerId, role, content) {
@@ -911,6 +985,37 @@ Keep responses concise, warm, and helpful. Use emojis sparingly but appropriatel
     function removeChatLoading(id) {
         const el = document.getElementById(id);
         if (el) el.remove();
+    }
+
+    /**
+     * Append an empty assistant message element for streaming.
+     * Returns the DOM element so it can be updated token-by-token.
+     */
+    function appendStreamingMessage(containerId) {
+        const container = document.getElementById(containerId);
+        const msgEl = document.createElement('div');
+        msgEl.className = 'chat-message assistant';
+        msgEl.innerHTML = `
+            <div class="message-avatar">🌿</div>
+            <div class="message-content streaming-cursor"></div>
+        `;
+        container.appendChild(msgEl);
+        container.scrollTop = container.scrollHeight;
+        return msgEl;
+    }
+
+    /**
+     * Update a streaming message element with the latest accumulated text.
+     * Removes the blinking cursor when done.
+     */
+    function updateStreamingMessage(msgEl, text, done) {
+        const contentEl = msgEl.querySelector('.message-content');
+        contentEl.innerHTML = formatMarkdown(text);
+        if (done) {
+            contentEl.classList.remove('streaming-cursor');
+        }
+        const container = msgEl.parentElement;
+        container.scrollTop = container.scrollHeight;
     }
 
     function renderRecipeChatMessages() {
