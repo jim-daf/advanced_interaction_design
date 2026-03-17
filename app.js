@@ -4,7 +4,7 @@
  * Handles:
  * - Navigation and view management
  * - Recipe rendering and analysis
- * - LLM integration (Ollama local AI) with fallback mode
+ * - LLM integration (OpenAI API) with fallback mode
  * - Negotiation/suggestion engine
  * - Impact tracking and gamification
  * - User preferences and persistence
@@ -12,13 +12,14 @@
 
 const App = (() => {
     // ===== State =====
+
     let state = {
         currentView: 'recipes',
         currentRecipe: null,
         currentIngredients: [],
-        ollamaUrl: 'http://localhost:11434',
-        model: 'qwen3:4b',
-        ollamaConnected: false,
+        openaiApiKey: '',
+        model: 'gpt-4o',
+        aiConnected: false,
         nudgeIntensity: 3,
         focusAreas: { carbon: true, health: true, cost: false },
         dietaryRestrictions: [],
@@ -42,6 +43,7 @@ const App = (() => {
 
     // ===== Initialization =====
     function init() {
+        initTheme();
         loadState();
         setupNavigation();
         setupEventListeners();
@@ -52,6 +54,27 @@ const App = (() => {
         checkStreak();
     }
 
+    // ===== Theme =====
+    function initTheme() {
+        const saved = localStorage.getItem('econudge_theme');
+        if (saved === 'dark') {
+            document.documentElement.setAttribute('data-theme', 'dark');
+        } else {
+            document.documentElement.removeAttribute('data-theme');
+        }
+    }
+
+    function toggleTheme() {
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        if (isDark) {
+            document.documentElement.removeAttribute('data-theme');
+            localStorage.setItem('econudge_theme', 'light');
+        } else {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            localStorage.setItem('econudge_theme', 'dark');
+        }
+    }
+
     // ===== State Persistence =====
     function loadState() {
         try {
@@ -60,44 +83,53 @@ const App = (() => {
                 const parsed = JSON.parse(saved);
                 state = { ...state, ...parsed };
             }
-            // Load Ollama URL separately
-            const url = localStorage.getItem('econudge_ollama_url');
-            if (url) state.ollamaUrl = url;
-            const model = localStorage.getItem('econudge_ollama_model');
-            if (model) state.model = model;
         } catch (e) {
             console.warn('Failed to load state:', e);
         }
-        // Check Ollama connection on load
-        checkOllamaConnection();
+        // Always enforce the correct model — overrides stale localStorage values
+        state.model = 'gpt-4o';
+        checkAIConnection();
     }
 
     function saveState() {
         try {
             const toSave = { ...state };
-            delete toSave.ollamaConnected; // Runtime-only flag
+            delete toSave.aiConnected; // Runtime-only flag
             localStorage.setItem('econudge_state', JSON.stringify(toSave));
         } catch (e) {
             console.warn('Failed to save state:', e);
         }
     }
 
-    async function checkOllamaConnection() {
+    function openaiHeaders() {
+        return {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${state.openaiApiKey}`,
+        };
+    }
+
+    async function checkAIConnection() {
+        const statusEl = document.querySelector('.assistant-status');
+        if (!state.openaiApiKey) {
+            state.aiConnected = false;
+            if (statusEl) statusEl.textContent = 'No API key — add your OpenAI key in Settings';
+            return;
+        }
         try {
-            const resp = await fetch(`${state.ollamaUrl}/api/tags`, { method: 'GET' });
+            const resp = await fetch('https://api.openai.com/v1/models', {
+                method: 'GET',
+                headers: { 'Authorization': `Bearer ${state.openaiApiKey}` },
+            });
             if (resp.ok) {
-                state.ollamaConnected = true;
-                const data = await resp.json();
-                console.log(`Ollama connected. Available models: ${data.models?.map(m => m.name).join(', ')}`);
-                // Update assistant status
-                const statusEl = document.querySelector('.assistant-status');
-                if (statusEl) statusEl.textContent = `Connected to Ollama — using ${state.model}`;
+                state.aiConnected = true;
+                if (statusEl) statusEl.textContent = `Connected to OpenAI — using ${state.model}`;
             } else {
-                state.ollamaConnected = false;
+                state.aiConnected = false;
+                if (statusEl) statusEl.textContent = 'API key invalid — check Settings';
             }
         } catch (e) {
-            state.ollamaConnected = false;
-            console.warn('Ollama not reachable:', e.message);
+            state.aiConnected = false;
+            if (statusEl) statusEl.textContent = 'OpenAI not reachable';
         }
     }
 
@@ -128,6 +160,9 @@ const App = (() => {
 
     // ===== Event Listeners =====
     function setupEventListeners() {
+        // Theme toggle
+        document.getElementById('themeToggle').addEventListener('click', toggleTheme);
+
         // Back button
         document.getElementById('backToRecipes').addEventListener('click', () => {
             switchView('recipes');
@@ -167,10 +202,9 @@ const App = (() => {
         document.getElementById('saveRecipeBtn').addEventListener('click', saveCurrentRecipe);
 
         // Settings
-        document.getElementById('saveApiKey').addEventListener('click', saveApiSettings);
-        document.getElementById('testOllamaBtn').addEventListener('click', testOllamaConnection);
-        document.getElementById('saveDietPrefs').addEventListener('click', saveDietPreferences);
-        document.getElementById('clearDataBtn').addEventListener('click', clearAllData);
+        document.getElementById('saveDietPrefs')?.addEventListener('click', saveDietPreferences);
+        document.getElementById('saveApiKeyBtn')?.addEventListener('click', saveApiKey);
+        document.getElementById('clearDataBtn')?.addEventListener('click', clearAllData);
 
         // Load settings into form
         loadSettingsToForm();
@@ -714,123 +748,94 @@ const App = (() => {
     }
 
     // ===== LLM Integration =====
-    const SYSTEM_PROMPT = `You are Eco-Nudge, a friendly and empathetic sustainable meal planning assistant. Your role is to help users make eco-friendly food choices without being pushy or guilt-tripping. You run locally via Ollama, so user data stays private.
+    const SYSTEM_PROMPT = `You are Eco-Nudge, a sustainable meal planning assistant. Give direct, data-driven answers. No fluff.
 
-Core principles:
-1. RESPECT USER AUTONOMY - Always present suggestions as options, never demands
-2. BE TRANSPARENT - Explain the reasoning behind suggestions with data
-3. BE EMPATHETIC - Acknowledge user preferences and emotional state
-4. BE FACTUAL - Use real carbon footprint data and nutritional facts
-5. AVOID GUILT-TRIPPING - Frame everything positively; focus on benefits, not blame
-6. ADAPT YOUR TONE - If the user seems resistant, back off and be more gentle
+Carbon footprint (kg CO₂e/kg): beef 27, lamb 24, chocolate 18.7, coffee 16.5, cheese 13.5, shrimp 11.8, pork 7.6, chicken 6.9, salmon 5.4, eggs 4.8, rice 2.7, tofu 2.0, pasta 1.8, lentils 0.9, chickpeas 0.8, beans 0.7, oats 0.5, potatoes 0.5, vegetables 0.3–1.4.
 
-You are a knowledgeable expert on sustainable food, nutrition, cooking techniques, meal planning, seasonal eating, food waste reduction, and dietary adaptations. Answer ANY food-related question the user has — you are not limited to substitutions only. You can:
-- Discuss recipes, cooking techniques, meal prep strategies
-- Explain the environmental impact of different foods and food systems
-- Provide nutritional guidance and dietary information
-- Suggest complete meal plans for different lifestyles
-- Compare foods across carbon, health, cost, and taste dimensions
-- Discuss food security, seasonal eating, and local sourcing
-- Answer general questions while gently relating back to sustainability
-
-Here is carbon footprint data you should reference (kg CO₂e per kg of food):
-HIGH IMPACT: beef(27), lamb(24), shrimp(11.8), cheese(13.5), dark chocolate(18.7), coffee(16.5)
-MODERATE: pork(7.6), chicken(6.9), farmed salmon(5.4), eggs(4.8), rice(2.7), pasta(1.8)
-LOW IMPACT: tofu(2.0), lentils(0.9), beans(0.7), chickpeas(0.8), oats(0.5), potatoes(0.5), seasonal vegetables(0.3-1.4), fruits(0.4-1.1)
-
-When suggesting alternatives:
-- Explain the CO₂ savings clearly with specific numbers
-- Mention health benefits when applicable
-- Acknowledge that taste preferences matter
-- Offer multiple options when possible
-- If the user declines, gracefully accept and move on
-
-Keep responses concise, warm, and helpful. Use emojis sparingly but appropriately. Format with markdown (bold, lists) for readability.`;
+Rules:
+- Lead with the answer, then explain.
+- Always include specific CO₂ numbers when comparing foods.
+- For swaps: state the savings (e.g. “saves 2.1 kg CO₂e”), give a 1-sentence reason, and name 2–3 alternatives.
+- For recipes: list ingredients with amounts, steps, and total CO₂/serving.
+- Use bold and bullet points. Keep it under 200 words unless a recipe is requested.
+- Respect preferences — suggest, don't push.`;
 
     async function callLLM(messages) {
-        if (!state.ollamaConnected) {
-            // Try to connect first
-            await checkOllamaConnection();
-        }
-
-        if (!state.ollamaConnected) {
+        if (!state.aiConnected) await checkAIConnection();
+        if (!state.aiConnected) {
+            showToast('Not connected to OpenAI — add your API key in Settings', 'warning');
             return generateFallbackResponse(messages);
         }
 
         try {
-            const response = await fetch(`${state.ollamaUrl}/api/chat`, {
+            const response = await fetch('https://api.openai.com/v1/chat/completions', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: openaiHeaders(),
                 body: JSON.stringify({
                     model: state.model,
                     messages: [
                         { role: 'system', content: SYSTEM_PROMPT },
-                        ...messages,
+                        ...messages.slice(-10),
                     ],
-                    stream: false,
-                    options: {
-                        temperature: 0.7,
-                        num_predict: 300,
-                    },
-                    keep_alive: '10m',
+                    temperature: 0.7,
+                    max_tokens: 2048,
                 }),
             });
 
             if (!response.ok) {
                 const errText = await response.text();
-                console.error('Ollama API error:', errText);
+                console.error('OpenAI API error:', errText);
+                let errMsg = 'OpenAI API error';
+                try { errMsg = JSON.parse(errText).error?.message || errMsg; } catch (_) {}
+                showToast(errMsg, 'error');
                 return generateFallbackResponse(messages);
             }
 
             const data = await response.json();
-            return data.message?.content || generateFallbackResponse(messages);
+            return data.choices?.[0]?.message?.content || generateFallbackResponse(messages);
         } catch (error) {
-            console.error('Ollama call failed:', error);
-            state.ollamaConnected = false;
+            console.error('OpenAI call failed:', error);
+            showToast('Network error: ' + error.message, 'error');
+            state.aiConnected = false;
             return generateFallbackResponse(messages);
         }
     }
 
     /**
-     * Streaming LLM call — yields tokens as they arrive so the UI
-     * can display them progressively for a perceived 1-2 s response time.
-     * Falls back to a single non-streamed result when Ollama is unavailable.
+     * Streaming LLM call via OpenAI SSE — yields tokens as they arrive.
+     * Falls back to built-in responses when no API key is set.
      */
     async function callLLMStream(messages, onToken) {
-        if (!state.ollamaConnected) {
-            await checkOllamaConnection();
-        }
-
-        if (!state.ollamaConnected) {
+        if (!state.aiConnected) await checkAIConnection();
+        if (!state.aiConnected) {
+            showToast('Not connected to OpenAI — add your API key in Settings', 'warning');
             const fallback = generateFallbackResponse(messages);
             onToken(fallback, true);
             return fallback;
         }
 
         try {
-            const response = await fetch(`${state.ollamaUrl}/api/chat`, {
+            const response = await fetch('https://api.openai.com/v1/chat/completions', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: openaiHeaders(),
                 body: JSON.stringify({
                     model: state.model,
                     messages: [
                         { role: 'system', content: SYSTEM_PROMPT },
-                        ...messages,
+                        ...messages.slice(-10),
                     ],
+                    temperature: 0.7,
+                    max_tokens: 2048,
                     stream: true,
-                    options: {
-                        temperature: 0.7,
-                        num_predict: 300,
-                    },
-                    keep_alive: '10m',
                 }),
             });
 
             if (!response.ok) {
                 const errText = await response.text();
-                console.error('Ollama API error:', errText);
+                console.error('OpenAI API error:', errText);
+                let errMsg = 'OpenAI API error';
+                try { errMsg = JSON.parse(errText).error?.message || errMsg; } catch (_) {}
+                showToast(errMsg, 'error');
                 const fallback = generateFallbackResponse(messages);
                 onToken(fallback, true);
                 return fallback;
@@ -844,20 +849,27 @@ Keep responses concise, warm, and helpful. Use emojis sparingly but appropriatel
                 const { done, value } = await reader.read();
                 if (done) break;
                 const chunk = decoder.decode(value, { stream: true });
-                // Each line is a JSON object
-                for (const line of chunk.split('\n').filter(l => l.trim())) {
+                for (const line of chunk.split('\n')) {
+                    const trimmed = line.trim();
+                    if (!trimmed || !trimmed.startsWith('data: ')) continue;
+                    const data = trimmed.slice(6);
+                    if (data === '[DONE]') {
+                        onToken(full, true);
+                        break;
+                    }
                     try {
-                        const json = JSON.parse(line);
-                        const token = json.message?.content || '';
+                        const json = JSON.parse(data);
+                        const token = json.choices?.[0]?.delta?.content || '';
                         full += token;
-                        onToken(full, json.done === true);
+                        onToken(full, false);
                     } catch (_) { /* skip malformed */ }
                 }
             }
             return full || generateFallbackResponse(messages);
         } catch (error) {
-            console.error('Ollama stream failed:', error);
-            state.ollamaConnected = false;
+            console.error('OpenAI stream failed:', error);
+            showToast('Network error: ' + error.message, 'error');
+            state.aiConnected = false;
             const fallback = generateFallbackResponse(messages);
             onToken(fallback, true);
             return fallback;
@@ -1048,68 +1060,32 @@ Keep responses concise, warm, and helpful. Use emojis sparingly but appropriatel
 
     // ===== Settings =====
     function loadSettingsToForm() {
-        document.getElementById('ollamaUrlInput').value = state.ollamaUrl;
-        // Set model dropdown or custom field
-        const modelSelect = document.getElementById('modelSelect');
-        const customModelInput = document.getElementById('customModelInput');
-        const dropdownValues = [...modelSelect.options].map(o => o.value);
-        if (dropdownValues.includes(state.model)) {
-            modelSelect.value = state.model;
-            customModelInput.value = '';
-        } else {
-            modelSelect.value = dropdownValues[0]; // default
-            customModelInput.value = state.model;
-        }
         document.getElementById('nudgeIntensity').value = state.nudgeIntensity;
         document.getElementById('focusCarbon').checked = state.focusAreas.carbon;
         document.getElementById('focusHealth').checked = state.focusAreas.health;
         document.getElementById('focusCost').checked = state.focusAreas.cost;
         document.getElementById('allergies').value = state.allergies || '';
+        const apiKeyInput = document.getElementById('openaiApiKey');
+        if (apiKeyInput) apiKeyInput.value = state.openaiApiKey || '';
     }
 
-    function saveApiSettings() {
-        state.ollamaUrl = document.getElementById('ollamaUrlInput').value.trim() || 'http://localhost:11434';
-        localStorage.setItem('econudge_ollama_url', state.ollamaUrl);
-
-        const customModel = document.getElementById('customModelInput').value.trim();
-        state.model = customModel || document.getElementById('modelSelect').value;
-        localStorage.setItem('econudge_ollama_model', state.model);
-
+    function saveApiKey() {
+        const key = document.getElementById('openaiApiKey').value.trim();
+        state.openaiApiKey = key;
+        state.aiConnected = false;
         saveState();
-        showToast(`AI settings saved! Model: ${state.model}`, 'success');
-
-        // Re-check connection with new settings
-        checkOllamaConnection();
-    }
-
-    async function testOllamaConnection() {
-        showToast('Testing connection to Ollama...', 'info');
-        try {
-            const resp = await fetch(`${state.ollamaUrl}/api/tags`, { method: 'GET' });
-            if (resp.ok) {
-                const data = await resp.json();
-                const modelNames = data.models?.map(m => m.name) || [];
-                state.ollamaConnected = true;
-                const hasModel = modelNames.some(n => n.startsWith(state.model.split(':')[0]));
-                let msg = `Connected! Found ${modelNames.length} model(s): ${modelNames.join(', ')}.`;
-                if (!hasModel) {
-                    msg += ` \n⚠️ Model "${state.model}" not found. Run: ollama pull ${state.model}`;
-                    showToast(msg, 'warning');
-                } else {
-                    showToast(msg, 'success');
-                }
-                // Update assistant status
-                const statusEl = document.querySelector('.assistant-status');
-                if (statusEl) statusEl.textContent = `Connected to Ollama — using ${state.model}`;
+        checkAIConnection().then(() => {
+            if (state.aiConnected) {
+                showToast('OpenAI API key saved & verified!', 'success');
+            } else if (key) {
+                showToast('API key saved but could not connect — check the key.', 'warning');
             } else {
-                state.ollamaConnected = false;
-                showToast('Ollama responded with an error. Is it running?', 'error');
+                showToast('API key cleared.', 'info');
             }
-        } catch (e) {
-            state.ollamaConnected = false;
-            showToast('Cannot reach Ollama. Make sure it is running on ' + state.ollamaUrl, 'error');
-        }
+        });
     }
+
+
 
     function saveDietPreferences() {
         state.focusAreas.carbon = document.getElementById('focusCarbon').checked;
@@ -1132,8 +1108,6 @@ Keep responses concise, warm, and helpful. Use emojis sparingly but appropriatel
     function clearAllData() {
         if (confirm('This will clear all your saved data, including impact history and preferences. Continue?')) {
             localStorage.removeItem('econudge_state');
-            localStorage.removeItem('econudge_ollama_url');
-            localStorage.removeItem('econudge_ollama_model');
             location.reload();
         }
     }
