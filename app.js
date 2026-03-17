@@ -17,7 +17,7 @@ const App = (() => {
         currentView: 'recipes',
         currentRecipe: null,
         currentIngredients: [],
-        openaiApiKey: '',
+        openaiApiKey: DEFAULT_API_KEY,
         model: 'gpt-4o',
         aiConnected: false,
         nudgeIntensity: 3,
